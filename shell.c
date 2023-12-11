@@ -179,7 +179,8 @@ void env_print(void)
 
 void set_trimmed_line(void)
 {
-	ssize_t line_size = 0, res;
+	size_t line_size = 0;
+        ssize_t res;
 
 	errno = 0;
 	res = get_line(&line, &line_size, stdin);
