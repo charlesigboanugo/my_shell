@@ -1,46 +1,59 @@
-#include "shell2.h"
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 #include <errno.h>
 
-extern char *pathname;
-
-int main(__attribute__((unused)) int ac, __attribute__((unused)) char **av, char **env)
+ssize_t get_line(char **lineptr, size_t *size, FILE *stream)
 {
-        char *prompt = "myshell$ ", *tmp = NULL;
-	pid_t cpid;
+	static ssize_t default_size = 120, count = 1;
+	ssize_t buf_alloc = 0, line_size = 0, byte_read = 0;
+	char *tmp = NULL, single[1];
+	int fd;
 
-        do {
-		printf("%s", prompt);
-		set_trimmed_line();
-		if (*tr_line == '\0')
+	errno = 0;
+	if (lineptr == NULL)
+		return (-1);
+	if (*lineptr == NULL || size == NULL || *size == 0)
+	{
+		if (*lineptr != NULL)
+			free(*lineptr);	
+		*lineptr = malloc(sizeof(char) * default_size);
+		if (*lineptr == NULL)
+			return (-1);
+		buf_alloc = default_size;
+	}
+	else
+		buf_alloc = (ssize_t) *size;
+
+	fd  = fileno(stream);
+	if (fd == -1)
+		return (-1);
+	tmp = *lineptr;
+
+	do {
+		if (line_size + 2 > buf_alloc)
 		{
-			clean_buff();
-			continue;
+			printf("yes");
+			buf_alloc = (buf_alloc / default_size + 1) * default_size;
+			tmp = malloc(sizeof(char) * buf_alloc);
+			if (tmp == NULL)
+				return (-1);
+			memcpy(tmp, *lineptr, line_size);
+			free(*lineptr);
+			*lineptr = tmp;
 		}
-		tmp = strdup(tr_line);
-		if (!tmp)
-			clean_exit("strdup error", 1);
-		tmp = strtok(tmp, " ");
-		if (isbuiltin(tmp))
-		{
-			exec_builtin(env, tmp);
-			continue;
-		}
-		if (!set_command_pathname(env, tmp))
-			continue;
-		set_arguments();
-                if ((cpid = fork()) == -1)
-			clean_exit("fork error", 1);
-                wait(NULL);
-                if (cpid == 0)
-                {
-                        execve(pathname, arguments, env);
-			clean_exit("execve error", 1);
-		}
-		clean_buff();
-        } while (1);
-        return (0);
+		if ((byte_read = read(fd, single, 1)) == -1)
+			return (-1);
+		if (byte_read != 0)
+			tmp[line_size] = *single;
+		line_size++;
+	} while (byte_read != 0 && *single != '\n');
+	if (byte_read == 0 && (line_size - 1) == 0)
+		return (-1);
+	if (byte_read == 0)
+		tmp[--line_size] = '\0';
+	else
+		tmp[line_size] = '\0';
+	return (line_size);
 }

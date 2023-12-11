@@ -9,23 +9,27 @@
 #include <dirent.h>
 #include <errno.h>
 
-extern char *pathname;
-extern char *line;
-extern char *tr_line;
-extern char **arguments;
-static builtins built_cmds[] = {{"exit", exit_shell}, {"env", env_print}, {NULL, NULL}}; 
-static int bindex;
+char *pathname = NULL;
+char *line = NULL;
+char *tr_line = NULL;
+char **arguments = NULL;
+builtins built_cmds[] = {{"exit", exit_shell}, {"env", env_print}, {"setenv", set_env}, {"unsetenv", unset_env}, {NULL, NULL}}; 
+int bindex;
+char **environ = NULL;
 
-void set_pathname_from_env(char **env, char *path)
+void set_pathname_from_env(char *path)
 {
 	char  *dirpath, *path_var;
 
-	path_var = get_env(env, "PATH");  //allocates new memory and stores path there
+	if (strcmp(path, ".") == 0 || strcmp(path, "..") == 0)
+		return;
+	path_var = get_env("PATH");
 	dirpath = search_path(path_var, path); 
 	if (!dirpath)
 	{
 		printf("command not found\n");
 		free_setnull(&path);
+		free_setnull(&path_var);
 		clean_buff();
 		return;
 	}
@@ -90,20 +94,20 @@ void set_arguments(void)
 	tmp = strdup(tr_line);
 	if (!tmp)
 		clean_exit("strdup error", 1);
-	token = strtok(tmp, " ");
+	token = str_tok(tmp, " ");
 	while (token != NULL)
 	{
 		no_of_args++;
-		token = strtok(NULL, " ");
+		token = str_tok(NULL, " ");
 	}
 	free(tmp);
 	arguments = malloc(sizeof(*arguments) * (no_of_args + 1));
 	if (!arguments)
 		clean_exit("malloc error", 1);
 	arguments[0] = pathname;
-	token = strtok(line, " ");
+	token = str_tok(line, " ");
 	for (i = 1; i < no_of_args; i++)
-		arguments[i] = strtok(NULL, " "); 
+		arguments[i] = str_tok(NULL, " "); 
 	arguments[i] = NULL;
 }
 int isbuiltin(char *cmd)
@@ -117,20 +121,19 @@ int isbuiltin(char *cmd)
 	}
 	return (0);
 }
-void exec_builtin(char **env, char *cmd)
+void exec_builtin(char *cmd)
 {
-	(built_cmds[bindex].bfunc)(env, cmd);
-	free(cmd);
+	pathname = cmd;
+	set_arguments();
+	(built_cmds[bindex].bfunc)();
 	clean_buff();
 }
 
-void exit_shell(__attribute__((unused)) char **env, char *cmd)
+void exit_shell(void)
 {
 	int exit_status = 0, i, not_an_int = 0;
 
-	pathname = cmd;
-	set_arguments();
-	printf("%s\n", cmd);
+	printf("%s\n", pathname);
 	if (arguments[1] != NULL)
 	{
 		for (i = 0; arguments[1][i] != '\0'; i++)
@@ -159,44 +162,45 @@ char *remove_newline_trim_str(char *str)
 		str++;
 		ptr++;
 	}
-	while (*ptr != '\n' && *ptr != 4)
+	while (*ptr != '\n' && *ptr != '\0')
 		ptr++;
-	if (*ptr == 4)
+	if (*ptr == '\0')
 		printf("\n");
 	*ptr = '\0';
 	return str;
 }
-void env_print(char **env, char *cmd)
+void env_print(void)
 {
 	int i;
 
-	for (i = 0; env[i] != NULL; i++)
-		printf("%s\n", env[i]);	
+	for (i = 0; environ[i] != NULL; i++)
+		printf("%s\n", environ[i]);	
 }
 
 void set_trimmed_line(void)
 {
 	ssize_t line_size = 0, res;
 
-	res = getline(&line, &line_size, stdin);
+	errno = 0;
+	res = get_line(&line, &line_size, stdin);
 	if (res == -1)
 	{
-		if (line == NULL)
-			clean_exit("getline error", 1);
-		else
+		if (errno == 0)
 		{
 			printf("\n");
-			clean_exit(NULL, 1);
+			clean_exit(NULL, 0);
 		}
+		else
+			clean_exit("get_line error", 1);
 	}
 	tr_line = remove_newline_trim_str(line);
 }
 
-int set_command_pathname(char **env, char *str)
+int set_command_pathname(char *str)
 {
 	if (strchr(str, '/') == NULL)
 	{
-		set_pathname_from_env(env, str);
+		set_pathname_from_env(str);
 		if (!pathname)
 			return (0);
 	}
@@ -210,6 +214,22 @@ int set_command_pathname(char **env, char *str)
 
 }
 
+char **envcpy(char **env)
+{
+	char **copy = NULL;
+	int i = 0;
+
+	while (env[i] != NULL)
+		i++;
+	copy = malloc(sizeof(*copy) * (i + 1));
+	if (copy == NULL)
+		clean_exit("malloc error", 1);
+	for (i = 0; env[i] != NULL; i++)
+		copy[i] = strdup(env[i]);
+	copy[i] = NULL;
+	return (copy);
+}
+
 int main(__attribute__((unused)) int ac, __attribute__((unused)) char **av, char **env)
 {
         char *prompt = "myshell$ ", *tmp = NULL;
@@ -217,6 +237,7 @@ int main(__attribute__((unused)) int ac, __attribute__((unused)) char **av, char
 
         do {
 		printf("%s", prompt);
+		fflush(stdout);
 		set_trimmed_line();
 		if (*tr_line == '\0')
 		{
@@ -226,13 +247,14 @@ int main(__attribute__((unused)) int ac, __attribute__((unused)) char **av, char
 		tmp = strdup(tr_line);
 		if (!tmp)
 			clean_exit("strdup error", 1);
-		tmp = strtok(tmp, " ");
+		tmp = str_tok(tmp, " ");	
+		environ = envcpy(env);
 		if (isbuiltin(tmp))
 		{
-			exec_builtin(env, tmp);
+			exec_builtin(tmp);
 			continue;
 		}
-		if (!set_command_pathname(env, tmp))
+		if (!set_command_pathname(tmp))
 			continue;
 		set_arguments();
                 if ((cpid = fork()) == -1)
@@ -240,7 +262,7 @@ int main(__attribute__((unused)) int ac, __attribute__((unused)) char **av, char
                 wait(NULL);
                 if (cpid == 0)
                 {
-                        execve(pathname, arguments, env);
+                        execve(pathname, arguments, environ);
 			clean_exit("execve error", 1);
 		}
 		clean_buff();

@@ -1,3 +1,4 @@
+#include "shell.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,21 +6,24 @@
 #include <dirent.h>
 #include <errno.h>
 
-char *get_env(char **envp, char *var)
-{
-	char *val = NULL, *tmp;
+char **environ;
 
-	while (envp != NULL && val == NULL)
+char *get_env(char *var)
+{
+	char *val = NULL, *tmp = NULL;
+	int i = 0;
+
+	while (environ[i] != NULL && val == NULL)
 	{
-		tmp = strdup(*envp);
+		tmp = strdup(environ[i]);
 		if (!tmp)
 		{
 			printf("strdup error");
 			exit(1);
 		}
-		if (strcmp(strtok(tmp, "="), var) == 0)
+		if (strcmp(str_tok(tmp, "="), var) == 0)
 		{
-			val = strdup(strtok(NULL, ""));
+			val = strdup(str_tok(NULL, ""));
 			if (val == NULL)
 			{
 				printf("strdup error");
@@ -27,7 +31,7 @@ char *get_env(char **envp, char *var)
 			}
 		}
 		free(tmp);
-		envp++;
+		i++;
 	}	
 	return (val);
 }
@@ -39,11 +43,11 @@ char *search_path(char *path, char *cmd)
 	char *dirpath = NULL, *nxt_path;
 	int file_present = 0;
 
-	nxt_path = strtok(path, ":");
+	nxt_path = str_tok(path, ":");
 	while (nxt_path && !file_present)
 	{
 		dirpath = nxt_path;
-		nxt_path = strtok(NULL, ":");
+		nxt_path = str_tok(NULL, ":");
         	dirp = opendir(dirpath);
         	if (!dirp)
 			break;
