@@ -3,9 +3,6 @@
 #include "shell.h"
 #include "string.h"
 
-char **arguments;
-char **environ;
-
 void set_env(void)
 {
 	char **ptr = NULL, *tmp, **new_env = NULL;

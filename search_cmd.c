@@ -6,8 +6,6 @@
 #include <dirent.h>
 #include <errno.h>
 
-char **environ;
-
 char *get_env(char *var)
 {
 	char *val = NULL, *tmp = NULL;
